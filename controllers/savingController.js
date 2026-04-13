@@ -255,7 +255,6 @@ exports.getMyBalance = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
-
 exports.getDashboardSummary = async (req, res) => {
   try {
     const [
@@ -265,9 +264,19 @@ exports.getDashboardSummary = async (req, res) => {
       latestTransactionsResult,
       recentUsersResult
     ] = await Promise.all([
-      pool.query(`SELECT COALESCE(SUM(amount), 0) AS total FROM savings WHERE type='withdraw'`),
-      pool.query(`SELECT COALESCE(SUM(amount), 0) AS total FROM savings WHERE type='deposit'`),
-      pool.query(`SELECT COUNT(*) AS total FROM users`),
+      pool.query(`
+        SELECT COALESCE(SUM(s.amount), 0) AS total 
+        FROM savings s 
+        JOIN users u ON s.user_id = u.id 
+        WHERE s.type='withdraw' AND u.role='user'
+      `),
+      pool.query(`
+        SELECT COALESCE(SUM(s.amount), 0) AS total 
+        FROM savings s 
+        JOIN users u ON s.user_id = u.id 
+        WHERE s.type='deposit' AND u.role='user'
+      `),
+      pool.query(`SELECT COUNT(*) AS total FROM users WHERE role='user'`),
       pool.query(`
         SELECT s.id, s.type, s.amount, s.created_at, u.full_name, u.username
         FROM savings s
@@ -275,7 +284,7 @@ exports.getDashboardSummary = async (req, res) => {
         ORDER BY s.created_at DESC
         LIMIT 5
       `),
-      pool.query(`SELECT id, username, full_name FROM users ORDER BY id DESC LIMIT 5`)
+      pool.query(`SELECT id, username, full_name FROM users WHERE role='user' ORDER BY id DESC LIMIT 5`)
     ]);
 
     const totalPayouts = parseInt(payoutsResult.rows[0].total);
