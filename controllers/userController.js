@@ -19,12 +19,24 @@ exports.searchUser = async (req, res) => {
   const { username, dob } = req.query;
 
   try {
-    let query = `SELECT id, username, full_name, dob, address FROM users WHERE 1=1`;
+    let query = `
+      SELECT 
+        u.id, 
+        u.username, 
+        u.full_name, 
+        u.dob, 
+        u.address,
+        (COALESCE(SUM(CASE WHEN s.type='deposit' THEN s.amount ELSE 0 END), 0) -
+         COALESCE(SUM(CASE WHEN s.type='withdraw' THEN s.amount ELSE 0 END), 0)) AS balance
+      FROM users u
+      LEFT JOIN savings s ON s.user_id = u.id
+      WHERE 1=1
+    `;
     const values = [];
     let count = 1;
-    
+
     if (username) {
-      query += ` AND username ILIKE $${count}`;
+      query += ` AND u.username ILIKE $${count}`;
       values.push(`%${username}%`);
       count++;
     }
@@ -35,21 +47,27 @@ exports.searchUser = async (req, res) => {
         const [day, month, year] = parts;
         const formattedDob = `${year}-${month}-${day}`;
         
-        query += ` AND dob = $${count}`;
+        query += ` AND u.dob = $${count}`;
         values.push(formattedDob);
         count++;
       } else {
         return res.status(400).json({ message: "Format tanggal harus DD-MM-YYYY" });
       }
     }
+    query += ` GROUP BY u.id`;
 
     const result = await pool.query(query, values);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "User tidak ditemukan" });
     }
+
+    const formattedResult = result.rows.map(user => ({
+      ...user,
+      balance: parseInt(user.balance, 10)
+    }));
     
-    res.json(result.rows);
+    res.json(formattedResult);
   } catch (error) {
     res.status(500).json({ message: "Terjadi kesalahan pada server", error: error.message });
   }
