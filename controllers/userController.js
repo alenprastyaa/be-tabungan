@@ -1,16 +1,15 @@
 // src/controllers/userController.js
 const pool = require("../config/db");
 const bcrypt = require("bcrypt");
-
 exports.createUser = async (req, res) => {
-  const { username, password, full_name, dob, address } = req.body;
+  const { username, password, full_name, dob, address, phone } = req.body;
 
   const hashed = await bcrypt.hash(password, 10);
 
   const result = await pool.query(
-    `INSERT INTO users (username, password, full_name, dob, address)
-     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [username, hashed, full_name, dob, address ]
+    `INSERT INTO users (username, password, full_name, dob, address, phone)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [username, hashed, full_name, dob, address, phone]
   );
 
   res.json(result.rows[0]);
@@ -26,6 +25,7 @@ exports.searchUser = async (req, res) => {
         u.full_name, 
         u.dob, 
         u.address,
+        u.phone,
         (COALESCE(SUM(CASE WHEN s.type='deposit' THEN s.amount ELSE 0 END), 0) -
          COALESCE(SUM(CASE WHEN s.type='withdraw' THEN s.amount ELSE 0 END), 0)) AS balance
       FROM users u
@@ -75,10 +75,10 @@ exports.searchUser = async (req, res) => {
 exports.getUserList = async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, username, full_name, dob, address
-       FROM users 
-       ORDER BY id DESC`
-    );
+  `SELECT id, username, full_name, dob, address, phone
+   FROM users 
+   ORDER BY id DESC`
+);
 
     res.status(200).json(result.rows);
   } catch (error) {
@@ -90,7 +90,7 @@ exports.getUserList = async (req, res) => {
 // Mengupdate data user berdasarkan ID
 exports.updateUser = async (req, res) => {
   const { id } = req.params;
-  const { full_name, dob, address, password } = req.body;
+  const { full_name, dob, address, password, phone } = req.body;
 
   try {
     let query = `UPDATE users SET `;
@@ -101,6 +101,11 @@ exports.updateUser = async (req, res) => {
     if (full_name) {
       query += `full_name = $${count}, `;
       values.push(full_name);
+      count++;
+    }
+      if (phone) {
+      query += `phone = $${count}, `;
+      values.push(phone);
       count++;
     }
     if (dob) {
