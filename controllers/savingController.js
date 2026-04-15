@@ -186,7 +186,8 @@ exports.getAllHistory = async (req, res) => {
 };
 exports.getAllBalances = async (req, res) => {
   try {
-    let { page = 1, limit = 10, search } = req.query;
+    // 1. Tambahkan 'dob' pada destructuring req.query
+    let { page = 1, limit = 10, search, dob } = req.query;
 
     page = parseInt(page);
     limit = parseInt(limit);
@@ -196,16 +197,36 @@ exports.getAllBalances = async (req, res) => {
     let values = [];
     let idx = 1;
 
+    // 2. Filter berdasarkan search (username / full_name)
     if (search) {
       where += ` AND (u.username ILIKE $${idx} OR u.full_name ILIKE $${idx})`;
       values.push(`%${search}%`);
       idx++;
     }
+
+    // 3. Tambahkan logika filter berdasarkan dob
+    if (dob) {
+      const parts = dob.split('-');
+      if (parts.length === 3) {
+        const [day, month, year] = parts;
+        const formattedDob = `${year}-${month}-${day}`;
+        
+        where += ` AND u.dob = $${idx}`;
+        values.push(formattedDob);
+        idx++;
+      } else {
+        return res.status(400).json({ message: "Format tanggal harus DD-MM-YYYY" });
+      }
+    }
+
+    // 4. Query total data untuk pagination (menggunakan where dan values yang sudah di-update)
     const totalQuery = `
       SELECT COUNT(*) FROM users u ${where}
     `;
     const totalResult = await pool.query(totalQuery, values);
     const total = parseInt(totalResult.rows[0].count);
+
+    // 5. Query utama untuk mengambil data balace
     const dataQuery = `
       SELECT 
         u.id AS user_id,
@@ -225,10 +246,12 @@ exports.getAllBalances = async (req, res) => {
       LIMIT $${idx++} OFFSET $${idx}
    `;
 
+    // 6. Masukkan limit dan offset ke array values pada urutan terakhir
     values.push(limit, offset);
 
     const result = await pool.query(dataQuery, values);
 
+    // 7. Kirimkan response
     res.json({
       page,
       limit,
