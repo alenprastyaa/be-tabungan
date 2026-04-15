@@ -74,20 +74,67 @@ exports.searchUser = async (req, res) => {
 };
 exports.getUserList = async (req, res) => {
   try {
-    const result = await pool.query(
-  `SELECT id, username, full_name, dob, address, phone
-   FROM users 
-   ORDER BY id DESC`
-);
+    const { page = 1, limit = 10, username, dob } = req.query;
+    const parsedPage = parseInt(page, 10) > 0 ? parseInt(page, 10) : 1;
+    const parsedLimit = parseInt(limit, 10) > 0 ? parseInt(limit, 10) : 10;
+    const offset = (parsedPage - 1) * parsedLimit;
+    let whereClause = `WHERE 1=1`;
+    const values = [];
+    let count = 1;
 
-    res.status(200).json(result.rows);
+    if (username) {
+      whereClause += ` AND username ILIKE $${count}`;
+      values.push(`%${username}%`);
+      count++;
+    }
+
+    if (dob) {
+      const parts = dob.split('-');
+      if (parts.length === 3) {
+        const [day, month, year] = parts;
+        const formattedDob = `${year}-${month}-${day}`;
+        
+        whereClause += ` AND dob = $${count}`;
+        values.push(formattedDob);
+        count++;
+      } else {
+        return res.status(400).json({ message: "Format tanggal harus DD-MM-YYYY" });
+      }
+    }
+
+    const countQuery = `SELECT COUNT(*) FROM users ${whereClause}`;
+    const countResult = await pool.query(countQuery, values);
+    const totalItems = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalItems / parsedLimit);
+    const dataQuery = `
+      SELECT id, username, full_name, dob, address, phone
+      FROM users 
+      ${whereClause} 
+      ORDER BY id DESC 
+      LIMIT $${count} OFFSET $${count + 1}
+    `;
+    
+    const dataValues = [...values, parsedLimit, offset];
+
+    const result = await pool.query(dataQuery, dataValues);
+
+    res.status(200).json({
+      message: "Berhasil mengambil daftar user",
+      data: result.rows,
+      pagination: {
+        totalItems,
+        totalPages,
+        currentPage: parsedPage,
+        limit: parsedLimit
+      }
+    });
+
   } catch (error) {
     console.error("Error fetching user list:", error);
-    res.status(500).json({ message: "Terjadi kesalahan pada server" });
+    res.status(500).json({ message: "Terjadi kesalahan pada server", error: error.message });
   }
 };
 
-// Mengupdate data user berdasarkan ID
 exports.updateUser = async (req, res) => {
   const { id } = req.params;
   const { full_name, dob, address, password, phone } = req.body;
