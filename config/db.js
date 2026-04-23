@@ -1,5 +1,9 @@
-const { Pool } = require("pg");
+const { Pool, types } = require("pg");
 require("dotenv").config();
+
+// Keep PostgreSQL DATE values as plain strings to avoid timezone shifts
+// when JavaScript serializes them back to JSON.
+types.setTypeParser(1082, (value) => value);
 
 const pool = new Pool({
   user: process.env.DB_USER,

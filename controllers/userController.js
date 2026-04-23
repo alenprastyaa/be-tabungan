@@ -1,15 +1,48 @@
 // src/controllers/userController.js
 const pool = require("../config/db");
 const bcrypt = require("bcrypt");
+
+const normalizeDob = (value) => {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const slashMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, day, month, year] = slashMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  const dashMatch = trimmed.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (dashMatch) {
+    const [, day, month, year] = dashMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  return null;
+};
 exports.createUser = async (req, res) => {
   const { username, password, full_name, dob, address, phone } = req.body;
+  const normalizedDob = dob ? normalizeDob(dob) : null;
+
+  if (dob && !normalizedDob) {
+    return res.status(400).json({
+      message: "Format tanggal harus YYYY-MM-DD, DD-MM-YYYY, atau DD/MM/YYYY"
+    });
+  }
 
   const hashed = await bcrypt.hash(password, 10);
 
   const result = await pool.query(
     `INSERT INTO users (username, password, full_name, dob, address, phone)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [username, hashed, full_name, dob, address, phone]
+    [username, hashed, full_name, normalizedDob, address, phone]
   );
 
   res.json(result.rows[0]);
@@ -42,16 +75,16 @@ exports.searchUser = async (req, res) => {
     }
     
     if (dob) {
-      const parts = dob.split('-');
-      if (parts.length === 3) {
-        const [day, month, year] = parts;
-        const formattedDob = `${year}-${month}-${day}`;
-        
+      const formattedDob = normalizeDob(dob);
+
+      if (formattedDob) {
         query += ` AND u.dob = $${count}`;
         values.push(formattedDob);
         count++;
       } else {
-        return res.status(400).json({ message: "Format tanggal harus DD-MM-YYYY" });
+        return res.status(400).json({
+          message: "Format tanggal harus YYYY-MM-DD, DD-MM-YYYY, atau DD/MM/YYYY"
+        });
       }
     }
     query += ` GROUP BY u.id`;
@@ -89,16 +122,16 @@ exports.getUserList = async (req, res) => {
     }
 
     if (dob) {
-      const parts = dob.split('-');
-      if (parts.length === 3) {
-        const [day, month, year] = parts;
-        const formattedDob = `${year}-${month}-${day}`;
-        
+      const formattedDob = normalizeDob(dob);
+
+      if (formattedDob) {
         whereClause += ` AND dob = $${count}`;
         values.push(formattedDob);
         count++;
       } else {
-        return res.status(400).json({ message: "Format tanggal harus DD-MM-YYYY" });
+        return res.status(400).json({
+          message: "Format tanggal harus YYYY-MM-DD, DD-MM-YYYY, atau DD/MM/YYYY"
+        });
       }
     }
 
@@ -138,8 +171,15 @@ exports.getUserList = async (req, res) => {
 exports.updateUser = async (req, res) => {
   const { id } = req.params;
   const { full_name, dob, address, password, phone } = req.body;
+  const normalizedDob = dob ? normalizeDob(dob) : null;
 
   try {
+    if (dob && !normalizedDob) {
+      return res.status(400).json({
+        message: "Format tanggal harus YYYY-MM-DD, DD-MM-YYYY, atau DD/MM/YYYY"
+      });
+    }
+
     let query = `UPDATE users SET `;
     const values = [];
     let count = 1;
@@ -157,7 +197,7 @@ exports.updateUser = async (req, res) => {
     }
     if (dob) {
       query += `dob = $${count}, `;
-      values.push(dob);
+      values.push(normalizedDob);
       count++;
     }
     if (address) {
