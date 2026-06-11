@@ -175,11 +175,32 @@ exports.getAllHistory = async (req, res) => {
     const total = parseInt(totalResult.rows[0].count);
 
     const dataQuery = `
+      WITH savings_with_balance AS (
+        SELECT
+          s.*,
+          SUM(CASE WHEN s.type='deposit' THEN s.amount ELSE -s.amount END)
+            OVER (
+              PARTITION BY s.user_id
+              ORDER BY s.created_at ASC, s.id ASC
+              ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            ) AS balance
+        FROM savings s
+      )
       SELECT 
-        s.*,
+        s.id,
+        s.user_id,
+        s.amount,
+        s.type,
+        s.penalty_percent,
+        s.penalty_amount,
+        s.final_amount AS received_amount,
+        s.balance AS final_amount,
+        s.balance,
+        s.created_by,
+        s.created_at,
         u.username,
         u.full_name
-      FROM savings s
+      FROM savings_with_balance s
       JOIN users u ON u.id = s.user_id
       ${where}
       ORDER BY s.created_at DESC
