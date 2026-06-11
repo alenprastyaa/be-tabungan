@@ -5,6 +5,7 @@ const router = express.Router();
 const auth = require("../controllers/authController");
 const user = require("../controllers/userController");
 const saving = require("../controllers/savingController");
+const report = require("../controllers/reportController");
 
 const { verifyToken, isAdmin } = require("../middlewares/auth");
 router.post("/login", auth.login);
@@ -22,6 +23,11 @@ router.get("/balance", verifyToken, saving.getBalance);
 router.get("/history", verifyToken, isAdmin, saving.getAllHistory);
 router.get("/admin/balances", verifyToken, isAdmin, saving.getAllBalances);
 router.get("/my-balance", verifyToken, saving.getMyBalance);
+
+// report email settings
+router.get("/report-settings", verifyToken, isAdmin, report.getSettings);
+router.put("/report-settings", verifyToken, isAdmin, report.updateSettings);
+router.post("/report-settings/send-now", verifyToken, isAdmin, report.sendNow);
 
 router.use('/dashboard', verifyToken, isAdmin, saving.getDashboardSummary);
 router.use('/user/dashboard', verifyToken, saving.getUserDashboardSummary);

@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+
 const getBalance = async (user_id) => {
   const result = await pool.query(
     `
@@ -14,6 +15,20 @@ const getBalance = async (user_id) => {
   return parseInt(result.rows[0].balance);
 };
 
+const calculateWithdrawalPenalty = (amount) => {
+  if (amount < 1000000) {
+    return {
+      penaltyPercent: Math.round((5000 / amount) * 100),
+      penaltyAmount: 5000
+    };
+  }
+
+  return {
+    penaltyPercent: 1,
+    penaltyAmount: Math.floor(amount * 0.01)
+  };
+};
+
 exports.deposit = async (req, res) => {
   const { user_id, amount } = req.body;
 
@@ -26,43 +41,49 @@ exports.deposit = async (req, res) => {
   res.json(result.rows[0]);
 };
 exports.withdraw = async (req, res) => {
-  const { user_id, amount, penalty_percent } = req.body;
+  try {
+    const { user_id } = req.body;
+    const amount = Number(req.body.amount);
 
-  if (!user_id || !amount || penalty_percent === undefined) {
-    return res.status(400).json({
-      message: "user_id, amount, dan penalty_percent wajib diisi"
-    });
+    if (!user_id || !Number.isFinite(amount) || !Number.isInteger(amount)) {
+      return res.status(400).json({
+        message: "user_id dan amount wajib diisi, amount harus berupa angka bulat"
+      });
+    }
+
+    if (amount <= 0) {
+      return res.status(400).json({
+        message: "amount harus lebih dari 0"
+      });
+    }
+
+    const { penaltyPercent, penaltyAmount } = calculateWithdrawalPenalty(amount);
+    const finalAmount = amount - penaltyAmount;
+
+    if (finalAmount <= 0) {
+      return res.status(400).json({
+        message: "Nominal penarikan harus lebih besar dari potongan penalti"
+      });
+    }
+
+    const balance = await getBalance(user_id);
+
+    if (amount > balance) {
+      return res.status(400).json({ message: "Saldo tidak cukup" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO savings 
+      (user_id, amount, type, penalty_percent, penalty_amount, final_amount, created_by)
+      VALUES ($1,$2,'withdraw',$3,$4,$5,$6) RETURNING *`,
+      [user_id, amount, penaltyPercent, penaltyAmount, finalAmount, req.user.id]
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal server error" });
   }
-
-  if (amount <= 0) {
-    return res.status(400).json({
-      message: "amount harus lebih dari 0"
-    });
-  }
-
-  if (penalty_percent < 0 || penalty_percent > 100) {
-    return res.status(400).json({
-      message: "penalty_percent harus antara 0 - 100"
-    });
-  }
-
-  const balance = await getBalance(user_id);
-
-  if (amount > balance) {
-    return res.status(400).json({ message: "Saldo tidak cukup" });
-  }
-
-  const penalty = (amount * penalty_percent) / 100;
-  const finalAmount = amount - penalty;
-
-  const result = await pool.query(
-    `INSERT INTO savings 
-    (user_id, amount, type, penalty_percent, penalty_amount, final_amount, created_by)
-    VALUES ($1,$2,'withdraw',$3,$4,$5,$6) RETURNING *`,
-    [user_id, amount, penalty_percent, penalty, finalAmount, req.user.id]
-  );
-
-  res.json(result.rows[0]);
 };
 
 exports.getHistory = async (req, res) => {
